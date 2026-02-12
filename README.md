@@ -29,6 +29,26 @@ GoAgent loads configuration from a `.env` file in the project root. Existing env
 | `GOAGENT_TOKEN` | Authentication token for WebSocket connections | No (auth disabled if unset) |
 | `BRAVE_SEARCH_API_KEY` | Brave Search API key | No |
 | `SEARCH_BACKEND` | `brave` or `duckduckgo` (auto-detects if unset) | No |
+| `LLM_BASE_URL` | OpenAI-compatible API base URL (default: `https://api.deepseek.com`) | No |
+| `LLM_API_KEY` | API key for the LLM provider | Yes (for cloud providers) |
+| `LLM_MODEL` | Model name to use (default: `deepseek-chat`) | No |
+
+## Agent Chat
+
+Create an agent and chat with it via any OpenAI-compatible LLM (DeepSeek, Ollama, OpenAI, etc.):
+
+```bash
+# Create an agent
+./bin/goagent-cli --token=your-token create advisor "You are a financial advisor who gives clear, practical advice."
+
+# Chat with it
+./bin/goagent-cli --token=your-token chat advisor "What are good index funds for beginners?"
+
+# Conversation history is maintained automatically
+./bin/goagent-cli --token=your-token chat advisor "How much should I invest monthly?"
+```
+
+For local models via Ollama, set `LLM_BASE_URL=http://localhost:11434/v1` and `LLM_MODEL=deepseek-r1:7b` in your `.env` file.
 
 ## Web Search
 
@@ -55,14 +75,16 @@ Session logs are auto-committed by the git-native persistence layer.
 ```
 cmd/gateway/       WebSocket server entry point
 cmd/cli/           CLI client (REPL + one-shot)
-internal/config/   .env file loader
-internal/logging/  JSONL session logger
-internal/session/  WebSocket session management
-internal/server/   HTTP/WebSocket server and request dispatch
-internal/tools/    Agent tools (web search)
+internal/agent/    Agent prompt loading and history management
 internal/auth/     Token-based authentication
+internal/config/   .env file loader
+internal/llm/      OpenAI-compatible LLM client
+internal/logging/  JSONL session logger
 internal/persistence/  File I/O and git auto-commit
 internal/protocol/ JSON-RPC 2.0 types
+internal/server/   HTTP/WebSocket server and request dispatch
+internal/session/  WebSocket session management
+internal/tools/    Agent tools (web search)
 ```
 
 ## Building

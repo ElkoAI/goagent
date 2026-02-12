@@ -69,8 +69,18 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 		prompt := strings.Join(args[1:], " ")
 		p, _ := json.Marshal(map[string]string{"name": name, "prompt": prompt})
 		req.Params = p
+	case "chat":
+		req.Method = "agent.chat"
+		if len(args) < 2 {
+			fmt.Println("Usage: chat <agent-name> <message>")
+			return
+		}
+		name := args[0]
+		message := strings.Join(args[1:], " ")
+		p, _ := json.Marshal(map[string]string{"agent": name, "message": message})
+		req.Params = p
 	default:
-		fmt.Printf("Unknown command: %s (Available: ping, search, create)\n", method)
+		fmt.Printf("Unknown command: %s (Available: ping, search, create, chat)\n", method)
 		return
 	}
 
@@ -99,7 +109,7 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 }
 
 func runInteractive(ctx context.Context, conn *websocket.Conn) {
-	fmt.Println("🤖 GoAgent CLI (REPL). Commands: ping, search <q>, create <name> <prompt>, exit")
+	fmt.Println("🤖 GoAgent CLI (REPL). Commands: ping, search <q>, create <name> <prompt>, chat <agent> <msg>, exit")
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("goagent> ")

@@ -25,12 +25,14 @@ A clean, high-performance, git-friendly agent gateway written in Go—inspired b
 
 ## Configuration
 - **`.env` support**: Place a `.env` file in the project root with `KEY=VALUE` pairs. Existing environment variables take precedence. See `.env.example` for available keys.
-- **Env vars**: `GOAGENT_TOKEN`, `BRAVE_SEARCH_API_KEY`, `SEARCH_BACKEND`
+- **Env vars**: `GOAGENT_TOKEN`, `BRAVE_SEARCH_API_KEY`, `SEARCH_BACKEND`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 
 ## Key Directories
 - `cmd/gateway/`: The central WebSocket server.
 - `cmd/cli/`: Client-side interaction tool (REPL + one-shot mode).
+- `internal/agent/`: Agent prompt loading and JSONL conversation history.
 - `internal/config/`: `.env` file loader.
+- `internal/llm/`: OpenAI-compatible LLM client (works with DeepSeek, Ollama, any provider).
 - `internal/logging/`: JSONL session logger.
 - `internal/persistence/`: Handles git-friendly file I/O and auto-commit.
 - `internal/session/`: WebSocket session management with message logging.
@@ -44,5 +46,8 @@ Configurable via `SEARCH_BACKEND` env var:
 - `brave` — requires `BRAVE_SEARCH_API_KEY`
 - `duckduckgo` — no API key required (default fallback)
 - Auto-detection: uses Brave if API key is set, otherwise DuckDuckGo.
+
+## Course
+See `COURSE.md` for a structured tutorial that maps each commit to a learning module.
 
 Last updated: February 2026.

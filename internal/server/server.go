@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
+	"goagent/internal/agent"
 	"goagent/internal/auth"
+	"goagent/internal/llm"
 	"goagent/internal/persistence"
 	"goagent/internal/protocol"
 	"goagent/internal/session"
@@ -23,6 +26,7 @@ type Server struct {
 	dataDir    string
 	auth       *auth.Manager
 	store      *persistence.Store
+	llm        *llm.Client
 	sessions   sync.Map
 	httpServer *http.Server
 }
@@ -41,6 +45,7 @@ func New(addr, token, dataDir string) *Server {
 		dataDir: store.DataDir,
 		auth:    auth.New(token),
 		store:   store,
+		llm:     llm.NewClient(),
 	}
 }
 
@@ -135,6 +140,47 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 			go s.store.AutoCommit("agent:created:" + params.Name) //
 		}
 
+	case "agent.chat":
+		var params struct {
+			Agent   string `json:"agent"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			sess.WriteError(req.ID, -32602, "Invalid params", nil)
+			return
+		}
+
+		systemPrompt, err := agent.LoadSystemPrompt(s.dataDir, params.Agent)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, "Load agent: "+err.Error(), nil)
+			return
+		}
+
+		history, err := agent.LoadHistory(s.dataDir, params.Agent)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, "Load history: "+err.Error(), nil)
+			return
+		}
+
+		userMsg := llm.Message{Role: "user", Content: params.Message}
+		history = append(history, userMsg)
+
+		response, err := s.llm.Chat(systemPrompt, history)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
+			return
+		}
+
+		assistantMsg := llm.Message{Role: "assistant", Content: response}
+
+		if err := agent.AppendHistory(s.dataDir, params.Agent, userMsg, assistantMsg); err != nil {
+			sess.WriteError(req.ID, -32000, "Save history: "+err.Error(), nil)
+			return
+		}
+
+		sess.WriteResponse(req.ID, map[string]string{"response": response}, nil)
+		go s.store.AutoCommit("agent:chat:" + params.Agent)
+
 	default:
 		sess.WriteError(req.ID, -32601, "Method not found", nil)
 	}
@@ -155,7 +201,8 @@ func (s *Server) CreateAgentFileSystem(name string, prompt string) error {
 		}
 	}
 
-	defPath := filepath.Join(agentDir, "FINANCIAL_ADVISOR.md")
+	mdName := strings.ToUpper(name) + ".md"
+	defPath := filepath.Join(agentDir, mdName)
 	content := "# Intent\n" + prompt + "\n\n# Status\nInitialized via GoAgent."
 	return os.WriteFile(defPath, []byte(content), 0644)
 }
