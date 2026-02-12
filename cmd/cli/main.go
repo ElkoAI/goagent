@@ -77,7 +77,7 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 		}
 		name := args[0]
 		message := strings.Join(args[1:], " ")
-		p, _ := json.Marshal(map[string]string{"agent": name, "message": message})
+		p, _ := json.Marshal(map[string]any{"agent": name, "message": message, "stream": true})
 		req.Params = p
 	default:
 		fmt.Printf("Unknown command: %s (Available: ping, search, create, chat)\n", method)
@@ -90,7 +90,12 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 		return
 	}
 
-	// Wait for and display the response.
+	if method == "chat" {
+		readStream(ctx, conn)
+		return
+	}
+
+	// Wait for and display the response (non-streaming commands).
 	_, respData, err := conn.Read(ctx)
 	if err != nil {
 		log.Printf("❌ Read error: %v", err)
@@ -105,6 +110,46 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 	} else {
 		pretty, _ := json.MarshalIndent(resp.Result, "", "  ")
 		fmt.Println(string(pretty))
+	}
+}
+
+// readStream reads streaming delta messages until done:true.
+func readStream(ctx context.Context, conn *websocket.Conn) {
+	for {
+		_, respData, err := conn.Read(ctx)
+		if err != nil {
+			log.Printf("❌ Read error: %v", err)
+			return
+		}
+
+		var resp protocol.Response
+		if err := json.Unmarshal(respData, &resp); err != nil {
+			fmt.Println("Raw Response:", string(respData))
+			return
+		}
+		if resp.Error != nil {
+			fmt.Printf("Error [%d]: %s\n", resp.Error.Code, resp.Error.Message)
+			return
+		}
+
+		// Parse the result map to get delta/done fields.
+		raw, _ := json.Marshal(resp.Result)
+		var result struct {
+			Delta    string `json:"delta"`
+			Response string `json:"response"`
+			Done     bool   `json:"done"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil {
+			fmt.Println("Raw Response:", string(respData))
+			return
+		}
+
+		if result.Done {
+			fmt.Println()
+			return
+		}
+
+		fmt.Print(result.Delta)
 	}
 }
 

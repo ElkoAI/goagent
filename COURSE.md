@@ -64,12 +64,20 @@ A structured tutorial that follows the project's commit history. Each module map
 
 ---
 
-## Module 4: Streaming Responses *(planned)*
+## Module 4: Streaming Responses
+
+**Commit**: *(this commit)*
 
 **Learning Objectives**:
-- Implement SSE-style streaming from the LLM
-- Stream tokens to the client over WebSocket in real time
-- Handle partial JSON parsing and chunked responses
+- Add SSE-based streaming to the OpenAI-compatible LLM client (`ChatStream`)
+- Send incremental token deltas over WebSocket using JSON-RPC with `delta`/`done` fields
+- Implement a streaming read loop in the CLI that prints tokens as they arrive
+- Keep the non-streaming `Chat()` path for backwards compatibility
+
+**Key Files**:
+- `internal/llm/client.go` — `ChatStream` method: SSE line parsing, `onChunk` callback
+- `internal/server/server.go` — streaming branch in `agent.chat` dispatch
+- `cmd/cli/main.go` — `readStream()` loop, `stream: true` param for chat
 
 ---
 

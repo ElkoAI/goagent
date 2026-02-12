@@ -144,6 +144,7 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 		var params struct {
 			Agent   string `json:"agent"`
 			Message string `json:"message"`
+			Stream  bool   `json:"stream"`
 		}
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			sess.WriteError(req.ID, -32602, "Invalid params", nil)
@@ -165,10 +166,31 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 		userMsg := llm.Message{Role: "user", Content: params.Message}
 		history = append(history, userMsg)
 
-		response, err := s.llm.Chat(systemPrompt, history)
-		if err != nil {
-			sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
-			return
+		var response string
+
+		if params.Stream {
+			onChunk := func(chunk string) {
+				sess.Write(protocol.Response{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Result: map[string]any{
+						"delta": chunk,
+						"done":  false,
+					},
+				})
+			}
+
+			response, err = s.llm.ChatStream(systemPrompt, history, onChunk)
+			if err != nil {
+				sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
+				return
+			}
+		} else {
+			response, err = s.llm.Chat(systemPrompt, history)
+			if err != nil {
+				sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
+				return
+			}
 		}
 
 		assistantMsg := llm.Message{Role: "assistant", Content: response}
@@ -178,7 +200,18 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 			return
 		}
 
-		sess.WriteResponse(req.ID, map[string]string{"response": response}, nil)
+		if params.Stream {
+			sess.Write(protocol.Response{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"response": response,
+					"done":     true,
+				},
+			})
+		} else {
+			sess.WriteResponse(req.ID, map[string]string{"response": response}, nil)
+		}
 		go s.store.AutoCommit("agent:chat:" + params.Agent)
 
 	default:

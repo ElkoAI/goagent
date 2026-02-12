@@ -41,12 +41,14 @@ Create an agent and chat with it via any OpenAI-compatible LLM (DeepSeek, Ollama
 # Create an agent
 ./bin/goagent-cli --token=your-token create advisor "You are a financial advisor who gives clear, practical advice."
 
-# Chat with it
+# Chat with it (tokens stream to your terminal in real time)
 ./bin/goagent-cli --token=your-token chat advisor "What are good index funds for beginners?"
 
 # Conversation history is maintained automatically
 ./bin/goagent-cli --token=your-token chat advisor "How much should I invest monthly?"
 ```
+
+The `chat` command streams tokens in real time over WebSocket — you see each word as it arrives from the LLM instead of waiting for the full response.
 
 For local models via Ollama, set `LLM_BASE_URL=http://localhost:11434/v1` and `LLM_MODEL=deepseek-r1:7b` in your `.env` file.
 
