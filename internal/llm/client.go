@@ -27,11 +27,8 @@ type Client struct {
 func NewClient() *Client {
 	baseURL := os.Getenv("LLM_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://api.deepseek.com"
+		baseURL = "https://api.deepseek.com/v1"
 	}
-	// Normalize: the client always appends /v1/chat/completions,
-	// so strip a trailing /v1 to avoid double-pathing.
-	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	model := os.Getenv("LLM_MODEL")
@@ -78,7 +75,7 @@ func (c *Client) Chat(systemPrompt string, messages []Message) (string, error) {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
@@ -148,7 +145,7 @@ func (c *Client) ChatStream(systemPrompt string, messages []Message, onChunk fun
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/v1/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}

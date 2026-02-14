@@ -23,7 +23,6 @@ func realClient(t *testing.T) *Client {
 	if baseURL == "" {
 		baseURL = "https://api.groq.com/openai/v1"
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/v1")
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	model := os.Getenv("LLM_MODEL")

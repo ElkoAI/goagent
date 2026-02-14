@@ -15,7 +15,7 @@ func mockLLMServer(response string) *httptest.Server {
 	chunks := splitIntoChunks(response, 5) // ~5-char chunks
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/chat/completions" {
+		if r.URL.Path != "/chat/completions" {
 			http.Error(w, "not found", 404)
 			return
 		}
