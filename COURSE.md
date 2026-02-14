@@ -81,16 +81,69 @@ A structured tutorial that follows the project's commit history. Each module map
 
 ---
 
-## Module 5: Tool Use *(planned)*
+## Module 5: Tool Use — OHLCV Market Data
+
+**Commit**: *(this commit)*
 
 **Learning Objectives**:
-- Define a tool schema that agents can invoke
-- Implement tool-call parsing from LLM responses
-- Execute tools server-side and feed results back into the conversation
+- Build a stateless tool that fetches real-world financial data (Yahoo Finance OHLCV)
+- Handle session-based API auth with crumb+cookie (cached via `sync.Once`)
+- Parse deeply nested JSON responses into clean domain structs
+- Wire a new `tool.ohlcv` JSON-RPC method through the server dispatch
+- Add a CLI command with positional args and a `--csv` output flag
+- Write mock tests using `httptest` to avoid network dependencies
+
+**Key Files**:
+- `internal/tools/ohlcv.go` — Yahoo Finance client: crumb auth, chart API parsing, CSV output
+- `internal/tools/ohlcv_test.go` — mock test with canned JSON, validation tests, integration test
+- `internal/server/server.go` — `tool.ohlcv` dispatch case
+- `cmd/cli/main.go` — `ohlcv` command with `--csv` flag
 
 ---
 
-## Module 6: Memory + Retrieval *(planned)*
+## Module 6: Skills — OpenClaw-Compatible Skill Loader
+
+**Commit**: *(this commit)*
+
+**Learning Objectives**:
+- Build a skill discovery system that scans directories for `SKILL.md` files
+- Parse YAML frontmatter with inline JSON metadata (matching OpenClaw's format)
+- Validate skill requirements (binaries via `exec.LookPath`, env vars via `os.Getenv`)
+- Inject skill instructions into agent system prompts at runtime
+- Implement a generic `tool.exec` for skill-backed command execution
+- Understand how OpenClaw ClawHub skills work and why ~80% are compatible without modification
+
+**Key Files**:
+- `internal/skills/loader.go` — skill discovery, frontmatter parser, requirement checker, prompt builder
+- `internal/skills/loader_test.go` — 12 tests covering parsing, loading, requirements, prompt building
+- `internal/tools/exec.go` — generic command execution tool with safety validation
+- `internal/server/server.go` — `skill.list`, `skill.refresh`, `tool.exec` dispatch + prompt injection in `agent.chat`
+- `cmd/cli/main.go` — `skills`, `skill-refresh`, `exec` CLI commands
+
+---
+
+## Module 7: Agent Tool-Calling Loop
+
+**Commit**: *(this commit)*
+
+**Learning Objectives**:
+- Extend the LLM client with OpenAI-compatible tool-call types (`ToolCall`, `ToolDef`, `ChatWithTools`)
+- Build a tool registry that maps tool names to JSON Schemas and handler functions
+- Implement the tool-calling loop: LLM → tool call → execute → feed result → repeat
+- Handle multi-round tool calls with a max iteration safety limit
+- Notify the client of in-progress tool calls via WebSocket messages
+- Understand the OpenAI tool-calling wire format (`tool_calls`, `finish_reason`, role `"tool"`)
+
+**Key Files**:
+- `internal/llm/client.go` — `ToolCall`, `ToolDef`, `ChatResult` types, `ChatWithTools` method
+- `internal/llm/client_test.go` — mock tool-call server (returns tool call → text), `TestChatWithTools_*`
+- `internal/tools/registry.go` — tool registry: schema definitions, `Call()` dispatch, `ToolDefs()` for LLM
+- `internal/tools/registry_test.go` — registry tests
+- `internal/server/server.go` — tool-calling loop in `agent.chat`, `maxToolRounds` limit
+
+---
+
+## Module 8: Memory + Retrieval *(planned)*
 
 **Learning Objectives**:
 - Build long-term memory beyond chat history

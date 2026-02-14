@@ -13,8 +13,36 @@ import (
 )
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// ToolCall represents a tool invocation requested by the LLM.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"` // always "function"
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall is the function name + arguments inside a ToolCall.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"` // JSON string
+}
+
+// ToolDef defines a tool for the OpenAI-compatible tools API.
+type ToolDef struct {
+	Type     string     `json:"type"` // "function"
+	Function ToolSchema `json:"function"`
+}
+
+// ToolSchema is the function schema inside a ToolDef.
+type ToolSchema struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"` // JSON Schema object
 }
 
 type Client struct {
@@ -49,17 +77,83 @@ func NewClient() *Client {
 type chatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Tools    []ToolDef `json:"tools,omitempty"`
 }
 
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string     `json:"content"`
+			ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
+}
+
+// ChatResult holds the LLM response which may be text or tool calls.
+type ChatResult struct {
+	Content   string     // text response (empty if tool calls)
+	ToolCalls []ToolCall // tool calls (empty if text response)
+}
+
+// ChatWithTools sends a chat completion request with tool definitions.
+// Returns a ChatResult which contains either text or tool calls.
+func (c *Client) ChatWithTools(messages []Message, tools []ToolDef) (*ChatResult, error) {
+	body, err := json.Marshal(chatRequest{
+		Model:    c.model,
+		Messages: messages,
+		Tools:    tools,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("llm request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("llm returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var chatResp chatResponse
+	if err := json.Unmarshal(respBody, &chatResp); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	if chatResp.Error != nil {
+		return nil, fmt.Errorf("llm error: %s", chatResp.Error.Message)
+	}
+
+	if len(chatResp.Choices) == 0 {
+		return nil, fmt.Errorf("llm returned no choices")
+	}
+
+	choice := chatResp.Choices[0]
+	result := &ChatResult{
+		Content:   choice.Message.Content,
+		ToolCalls: choice.Message.ToolCalls,
+	}
+	return result, nil
 }
 
 func (c *Client) Chat(systemPrompt string, messages []Message) (string, error) {
@@ -118,6 +212,7 @@ func (c *Client) Chat(systemPrompt string, messages []Message) (string, error) {
 type streamChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Tools    []ToolDef `json:"tools,omitempty"`
 	Stream   bool      `json:"stream"`
 }
 

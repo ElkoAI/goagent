@@ -36,7 +36,8 @@ A clean, high-performance, git-friendly agent gateway written in Go—inspired b
 - `internal/logging/`: JSONL session logger.
 - `internal/persistence/`: Handles git-friendly file I/O and auto-commit.
 - `internal/session/`: WebSocket session management with message logging.
-- `internal/tools/`: Extension point for agent skills (web search: Brave + DuckDuckGo).
+- `internal/skills/`: Skill loader — discovers and parses `SKILL.md` files (OpenClaw-compatible).
+- `internal/tools/`: Agent tools (web search, OHLCV market data, exec).
 
 ## Session Logging
 All WebSocket messages are persisted as JSONL files in `~/.goagent/sessions/<session-id>.jsonl`. Each line is `{"ts":"...","dir":"in|out","data":{...}}`. Files are auto-committed by the persistence layer.

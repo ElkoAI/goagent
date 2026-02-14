@@ -15,10 +15,15 @@ import (
 	"goagent/internal/persistence"
 	"goagent/internal/protocol"
 	"goagent/internal/session"
+	"goagent/internal/skills"
 	"goagent/internal/tools"
 
 	"nhooyr.io/websocket"
 )
+
+// maxToolRounds limits how many tool-call/result round-trips the agent can do
+// before the server forces it to produce a text response.
+const maxToolRounds = 10
 
 type Server struct {
 	addr       string
@@ -27,6 +32,8 @@ type Server struct {
 	auth       *auth.Manager
 	store      *persistence.Store
 	llm        *llm.Client
+	skills     *skills.Loader
+	registry   *tools.Registry
 	sessions   sync.Map
 	httpServer *http.Server
 }
@@ -39,13 +46,18 @@ func New(addr, token, dataDir string) *Server {
 	}
 
 	store := persistence.New(dataDir)
+	sl := skills.NewLoader(store.DataDir)
+	sl.LoadAll()
+
 	return &Server{
-		addr:    addr,
-		token:   token,
-		dataDir: store.DataDir,
-		auth:    auth.New(token),
-		store:   store,
-		llm:     llm.NewClient(),
+		addr:     addr,
+		token:    token,
+		dataDir:  store.DataDir,
+		auth:     auth.New(token),
+		store:    store,
+		llm:      llm.NewClient(),
+		skills:   sl,
+		registry: tools.NewRegistry(),
 	}
 }
 
@@ -121,6 +133,52 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 			go s.store.AutoCommit("tool:web_search") //
 		}
 
+	case "tool.ohlcv":
+		result, err := tools.OHLCV(req.Params)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, err.Error(), nil)
+		} else {
+			sess.WriteResponse(req.ID, result, nil)
+			go s.store.AutoCommit("tool:ohlcv")
+		}
+
+	case "tool.exec":
+		result, err := tools.Exec(req.Params)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, err.Error(), nil)
+		} else {
+			sess.WriteResponse(req.ID, result, nil)
+			go s.store.AutoCommit("tool:exec")
+		}
+
+	case "skill.list":
+		type entry struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Ready       bool     `json:"ready"`
+			Missing     []string `json:"missing,omitempty"`
+		}
+		var list []entry
+		for _, sk := range s.skills.Skills {
+			list = append(list, entry{
+				Name:        sk.Name,
+				Description: sk.Description,
+				Ready:       sk.Ready,
+				Missing:     sk.Missing,
+			})
+		}
+		sess.WriteResponse(req.ID, map[string]any{"skills": list}, nil)
+
+	case "skill.refresh":
+		if err := s.skills.LoadAll(); err != nil {
+			sess.WriteError(req.ID, -32000, "refresh: "+err.Error(), nil)
+		} else {
+			sess.WriteResponse(req.ID, map[string]any{
+				"loaded": len(s.skills.Skills),
+				"ready":  len(s.skills.Ready()),
+			}, nil)
+		}
+
 	case "agent.create":
 		var params struct {
 			Name   string `json:"name"`
@@ -157,6 +215,11 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 			return
 		}
 
+		// Inject loaded skill instructions into the agent's system prompt.
+		if skillPrompt := s.skills.BuildPrompt(); skillPrompt != "" {
+			systemPrompt += skillPrompt
+		}
+
 		history, err := agent.LoadHistory(s.dataDir, params.Agent)
 		if err != nil {
 			sess.WriteError(req.ID, -32000, "Load history: "+err.Error(), nil)
@@ -166,33 +229,65 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 		userMsg := llm.Message{Role: "user", Content: params.Message}
 		history = append(history, userMsg)
 
+		// Build the full message list with system prompt prepended.
+		msgs := make([]llm.Message, 0, len(history)+1)
+		msgs = append(msgs, llm.Message{Role: "system", Content: systemPrompt})
+		msgs = append(msgs, history...)
+
+		toolDefs := s.registry.ToolDefs()
 		var response string
 
-		if params.Stream {
-			onChunk := func(chunk string) {
+		// Tool-calling loop: call LLM → execute tool calls → feed results → repeat.
+		for round := 0; round < maxToolRounds; round++ {
+			result, err := s.llm.ChatWithTools(msgs, toolDefs)
+			if err != nil {
+				sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
+				return
+			}
+
+			// If the LLM returned a text response (no tool calls), we're done.
+			if len(result.ToolCalls) == 0 {
+				response = result.Content
+				break
+			}
+
+			// Notify the client that tools are being called.
+			for _, tc := range result.ToolCalls {
 				sess.Write(protocol.Response{
 					JSONRPC: "2.0",
 					ID:      req.ID,
 					Result: map[string]any{
-						"delta": chunk,
-						"done":  false,
+						"tool_call": tc.Function.Name,
+						"arguments": tc.Function.Arguments,
+						"done":      false,
 					},
 				})
 			}
 
-			response, err = s.llm.ChatStream(systemPrompt, history, onChunk)
-			if err != nil {
-				sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
-				return
+			// Append the assistant's tool-call message to the conversation.
+			assistantToolMsg := llm.Message{
+				Role:      "assistant",
+				ToolCalls: result.ToolCalls,
 			}
-		} else {
-			response, err = s.llm.Chat(systemPrompt, history)
-			if err != nil {
-				sess.WriteError(req.ID, -32000, "LLM error: "+err.Error(), nil)
-				return
+			msgs = append(msgs, assistantToolMsg)
+
+			// Execute each tool call and feed results back.
+			for _, tc := range result.ToolCalls {
+				toolResult, err := s.registry.Call(tc.Function.Name, tc.Function.Arguments)
+				if err != nil {
+					toolResult = `{"error":"` + err.Error() + `"}`
+				}
+
+				msgs = append(msgs, llm.Message{
+					Role:       "tool",
+					Content:    toolResult,
+					ToolCallID: tc.ID,
+				})
 			}
 		}
 
+		// If streaming was requested, re-send the final response as a stream
+		// (the tool-calling rounds were non-streaming for speed).
 		assistantMsg := llm.Message{Role: "assistant", Content: response}
 
 		if err := agent.AppendHistory(s.dataDir, params.Agent, userMsg, assistantMsg); err != nil {
@@ -201,6 +296,14 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 		}
 
 		if params.Stream {
+			sess.Write(protocol.Response{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Result: map[string]any{
+					"delta": response,
+					"done":  false,
+				},
+			})
 			sess.Write(protocol.Response{
 				JSONRPC: "2.0",
 				ID:      req.ID,

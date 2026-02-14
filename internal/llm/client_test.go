@@ -187,3 +187,133 @@ func TestChatStream_ErrorResponse(t *testing.T) {
 		t.Fatal("ChatStream() should return error on 429")
 	}
 }
+
+// mockToolCallServer simulates an LLM that returns a tool call on the first
+// request, then returns a text response on the second request (after receiving
+// the tool result).
+func mockToolCallServer() *httptest.Server {
+	callCount := 0
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.Error(w, "not found", 404)
+			return
+		}
+
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+
+		if callCount == 1 {
+			// First call: return a tool call.
+			w.Write([]byte(`{
+				"choices": [{
+					"message": {
+						"content": "",
+						"tool_calls": [{
+							"id": "call_001",
+							"type": "function",
+							"function": {
+								"name": "web_search",
+								"arguments": "{\"query\": \"Go programming\"}"
+							}
+						}]
+					},
+					"finish_reason": "tool_calls"
+				}]
+			}`))
+		} else {
+			// Second call (after tool result): return text.
+			w.Write([]byte(`{
+				"choices": [{
+					"message": {
+						"content": "Based on the search results, Go is great!"
+					},
+					"finish_reason": "stop"
+				}]
+			}`))
+		}
+	}))
+}
+
+func TestChatWithTools_TextResponse(t *testing.T) {
+	srv := mockLLMServer("Direct text answer")
+	defer srv.Close()
+
+	client := &Client{
+		baseURL:    srv.URL,
+		apiKey:     "test-key",
+		model:      "test-model",
+		httpClient: http.DefaultClient,
+	}
+
+	result, err := client.ChatWithTools([]Message{
+		{Role: "system", Content: "You are helpful."},
+		{Role: "user", Content: "Hi"},
+	}, []ToolDef{{
+		Type: "function",
+		Function: ToolSchema{
+			Name:        "web_search",
+			Description: "Search the web",
+			Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("ChatWithTools() error: %v", err)
+	}
+	if result.Content != "Direct text answer" {
+		t.Errorf("Content = %q, want 'Direct text answer'", result.Content)
+	}
+	if len(result.ToolCalls) != 0 {
+		t.Errorf("ToolCalls should be empty, got %d", len(result.ToolCalls))
+	}
+}
+
+func TestChatWithTools_ToolCallResponse(t *testing.T) {
+	srv := mockToolCallServer()
+	defer srv.Close()
+
+	client := &Client{
+		baseURL:    srv.URL,
+		apiKey:     "test-key",
+		model:      "test-model",
+		httpClient: http.DefaultClient,
+	}
+
+	// First call: should return a tool call.
+	result, err := client.ChatWithTools([]Message{
+		{Role: "user", Content: "Search for Go programming"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("ChatWithTools() round 1 error: %v", err)
+	}
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+
+	tc := result.ToolCalls[0]
+	if tc.ID != "call_001" {
+		t.Errorf("ToolCall.ID = %q", tc.ID)
+	}
+	if tc.Function.Name != "web_search" {
+		t.Errorf("ToolCall.Function.Name = %q", tc.Function.Name)
+	}
+	if tc.Function.Arguments != `{"query": "Go programming"}` {
+		t.Errorf("ToolCall.Function.Arguments = %q", tc.Function.Arguments)
+	}
+
+	// Second call: feed tool result back, should get text.
+	result, err = client.ChatWithTools([]Message{
+		{Role: "user", Content: "Search for Go programming"},
+		{Role: "assistant", ToolCalls: result.ToolCalls},
+		{Role: "tool", ToolCallID: tc.ID, Content: `{"results": [{"title": "Go", "url": "https://go.dev"}]}`},
+	}, nil)
+	if err != nil {
+		t.Fatalf("ChatWithTools() round 2 error: %v", err)
+	}
+	if result.Content != "Based on the search results, Go is great!" {
+		t.Errorf("Content = %q", result.Content)
+	}
+	if len(result.ToolCalls) != 0 {
+		t.Errorf("round 2 should have no tool calls, got %d", len(result.ToolCalls))
+	}
+}

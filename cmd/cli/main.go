@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"goagent/internal/protocol"
+	"goagent/internal/tools"
 	"nhooyr.io/websocket"
 )
 
@@ -69,6 +70,82 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 		prompt := strings.Join(args[1:], " ")
 		p, _ := json.Marshal(map[string]string{"name": name, "prompt": prompt})
 		req.Params = p
+	case "ohlcv":
+		req.Method = "tool.ohlcv"
+		// Filter out --csv flag from args.
+		var filtered []string
+		csvMode := false
+		for _, a := range args {
+			if a == "--csv" {
+				csvMode = true
+			} else {
+				filtered = append(filtered, a)
+			}
+		}
+		if len(filtered) < 1 {
+			fmt.Println("Usage: ohlcv <symbol> [range] [interval] [--csv]")
+			return
+		}
+		params := map[string]string{"symbol": filtered[0]}
+		if len(filtered) > 1 {
+			params["range"] = filtered[1]
+		}
+		if len(filtered) > 2 {
+			params["interval"] = filtered[2]
+		}
+		p, _ := json.Marshal(params)
+		req.Params = p
+
+		// Send, receive, and optionally format as CSV.
+		data, _ := json.Marshal(req)
+		if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+			log.Printf("Write error: %v", err)
+			return
+		}
+		_, respData, err := conn.Read(ctx)
+		if err != nil {
+			log.Printf("Read error: %v", err)
+			return
+		}
+		var resp protocol.Response
+		if err := json.Unmarshal(respData, &resp); err != nil {
+			fmt.Println("Raw Response:", string(respData))
+			return
+		}
+		if resp.Error != nil {
+			fmt.Printf("Error [%d]: %s\n", resp.Error.Code, resp.Error.Message)
+			return
+		}
+		if csvMode {
+			// Re-marshal the result to extract bars.
+			raw, _ := json.Marshal(resp.Result)
+			var ohlcvResult struct {
+				Symbol   string          `json:"symbol"`
+				Currency string          `json:"currency"`
+				Bars     []tools.OHLCVBar `json:"bars"`
+			}
+			json.Unmarshal(raw, &ohlcvResult)
+			fmt.Printf("# %s (%s)\n", ohlcvResult.Symbol, ohlcvResult.Currency)
+			fmt.Print(tools.BarsToCSV(ohlcvResult.Bars))
+		} else {
+			pretty, _ := json.MarshalIndent(resp.Result, "", "  ")
+			fmt.Println(string(pretty))
+		}
+		return
+
+	case "skills":
+		req.Method = "skill.list"
+	case "skill-refresh":
+		req.Method = "skill.refresh"
+	case "exec":
+		req.Method = "tool.exec"
+		if len(args) < 1 {
+			fmt.Println("Usage: exec <command>")
+			return
+		}
+		command := strings.Join(args, " ")
+		p, _ := json.Marshal(map[string]string{"command": command})
+		req.Params = p
 	case "chat":
 		req.Method = "agent.chat"
 		if len(args) < 2 {
@@ -80,7 +157,7 @@ func execute(ctx context.Context, conn *websocket.Conn, method string, args []st
 		p, _ := json.Marshal(map[string]any{"agent": name, "message": message, "stream": true})
 		req.Params = p
 	default:
-		fmt.Printf("Unknown command: %s (Available: ping, search, create, chat)\n", method)
+		fmt.Printf("Unknown command: %s (Available: ping, search, create, chat, ohlcv, skills, skill-refresh, exec)\n", method)
 		return
 	}
 
@@ -154,7 +231,7 @@ func readStream(ctx context.Context, conn *websocket.Conn) {
 }
 
 func runInteractive(ctx context.Context, conn *websocket.Conn) {
-	fmt.Println("🤖 GoAgent CLI (REPL). Commands: ping, search <q>, create <name> <prompt>, chat <agent> <msg>, exit")
+	fmt.Println("🤖 GoAgent CLI (REPL). Commands: ping, search, create, chat, ohlcv, skills, skill-refresh, exec, exit")
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Print("goagent> ")

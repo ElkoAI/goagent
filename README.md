@@ -61,6 +61,71 @@ Two backends are supported:
 
 Set `SEARCH_BACKEND` to force a specific backend, or leave it unset for auto-detection (Brave if key exists, otherwise DuckDuckGo).
 
+## OHLCV Market Data
+
+Fetch OHLCV (Open, High, Low, Close, Volume) candlestick data from Yahoo Finance. No API key required — works for stocks, ETFs, and crypto.
+
+```bash
+# Default: 1 month of daily bars (JSON)
+./bin/goagent-cli --token=your-token ohlcv AAPL
+
+# 1 year of daily bars
+./bin/goagent-cli --token=your-token ohlcv AAPL 1y
+
+# 3 months of daily bars for Bitcoin
+./bin/goagent-cli --token=your-token ohlcv BTC-USD 3mo 1d
+
+# CSV output (pipe-friendly)
+./bin/goagent-cli --token=your-token ohlcv SPY 5d --csv
+```
+
+| Param | Default | Values |
+|-------|---------|--------|
+| `symbol` | *(required)* | Ticker: `AAPL`, `BTC-USD`, `SPY` |
+| `range` | `1mo` | `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `2y`, `5y`, `10y`, `ytd`, `max` |
+| `interval` | `1d` | `1d`, `1wk`, `1mo` |
+
+The `--csv` flag outputs plain CSV instead of JSON — useful for piping to other tools or spreadsheets.
+
+## Skills (OpenClaw-Compatible)
+
+GoAgent can load skills from `~/.goagent/skills/` — including skills from OpenClaw's ClawHub marketplace. A skill is a directory with a `SKILL.md` file containing YAML frontmatter and markdown instructions that get injected into agent system prompts.
+
+```bash
+# List installed skills and their status
+./bin/goagent-cli --token=your-token skills
+
+# Reload skills after adding new ones (no restart needed)
+./bin/goagent-cli --token=your-token skill-refresh
+
+# Run a command via the generic exec tool (used by skills)
+./bin/goagent-cli --token=your-token exec "gh pr list"
+```
+
+### Creating a Skill
+
+```bash
+mkdir -p ~/.goagent/skills/my-skill
+cat > ~/.goagent/skills/my-skill/SKILL.md << 'EOF'
+---
+name: my-skill
+description: Does something useful
+metadata: {"openclaw":{"requires":{"bins":["curl"],"env":["MY_API_KEY"]}}}
+---
+
+# My Skill
+
+When the user asks to do the thing, run:
+`exec curl -s https://api.example.com/data`
+EOF
+```
+
+Skills are automatically checked for requirements (binaries and env vars) and only activated when all dependencies are satisfied.
+
+### OpenClaw Compatibility
+
+Most ClawHub skills work unmodified — GoAgent parses the same `SKILL.md` frontmatter format and injects skill instructions into agent prompts. Skills that shell out to CLI tools (`gh`, `curl`, `ffmpeg`, etc.) via `exec` work identically.
+
 ## Session Logging
 
 All WebSocket messages are automatically logged as JSONL files in `~/.goagent/sessions/`. Each line contains a timestamp, direction (`in`/`out`), and the raw message data:
@@ -86,7 +151,8 @@ internal/persistence/  File I/O and git auto-commit
 internal/protocol/ JSON-RPC 2.0 types
 internal/server/   HTTP/WebSocket server and request dispatch
 internal/session/  WebSocket session management
-internal/tools/    Agent tools (web search)
+internal/skills/   Skill loader (OpenClaw-compatible SKILL.md parser)
+internal/tools/    Agent tools (web search, OHLCV, exec)
 ```
 
 ## Building
