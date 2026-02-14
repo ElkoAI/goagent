@@ -29,6 +29,10 @@ func NewClient() *Client {
 	if baseURL == "" {
 		baseURL = "https://api.deepseek.com"
 	}
+	// Normalize: the client always appends /v1/chat/completions,
+	// so strip a trailing /v1 to avoid double-pathing.
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	model := os.Getenv("LLM_MODEL")
 	if model == "" {

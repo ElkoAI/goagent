@@ -5,7 +5,7 @@ GW_BIN  = $(BIN_DIR)/goagent-gw
 CLI_BIN = $(BIN_DIR)/goagent-cli
 TOKEN   = "supersecret123" # Replace with your GOAGENT_TOKEN env var
 
-.PHONY: all build run-gw clean update-go
+.PHONY: all build run-gw test test-integration clean update-go
 
 all: build
 
@@ -28,12 +28,24 @@ build:
 	GOTOOLCHAIN=local go build -o ./bin/goagent-cli ./cmd/cli
 	@echo "✅ Binaries ready in ./bin"
 
-# 3. Run Gateway
+# 3. Run tests (mock only — no API key needed)
+test:
+	@echo "🧪 Running tests..."
+	GOTOOLCHAIN=local go test ./... -run 'Test[^I]' -v
+	@echo "✅ Tests passed"
+
+# 4. Run tests including real LLM integration (needs .env with LLM_API_KEY)
+test-integration:
+	@echo "🧪 Running all tests (mock + integration)..."
+	@set -a && . ./.env && set +a && GOTOOLCHAIN=local go test ./... -v
+	@echo "✅ All tests passed"
+
+# 5. Run Gateway
 run-gw: build
 	@echo "🚀 Starting Gateway..."
 	@$(GW_BIN) --token=$(TOKEN) --data="~/.goagent"
 
-# 4. Cleanup
+# 6. Cleanup
 clean:
 	@echo "🧹 Cleaning up..."
 	@rm -rf $(BIN_DIR)
