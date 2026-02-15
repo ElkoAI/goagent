@@ -18,6 +18,7 @@ import (
 // Session represents a single connected client (CLI, bot, or dashboard).
 type Session struct {
 	id     string
+	userID string
 	ws     *websocket.Conn
 	store  *persistence.Store
 	logger *logging.SessionLogger
@@ -25,11 +26,11 @@ type Session struct {
 }
 
 // New initializes a new session with a unique ID, store reference, and JSONL logger.
-func New(ws *websocket.Conn, store *persistence.Store, dataDir string) *Session {
+func New(ws *websocket.Conn, store *persistence.Store, dataDir, userID string) *Session {
 	id := fmt.Sprintf("sess-%d", time.Now().UnixNano())
 	var logger *logging.SessionLogger
 	if dataDir != "" {
-		l, err := logging.NewSessionLogger(dataDir, id)
+		l, err := logging.NewSessionLogger(dataDir, userID, id)
 		if err != nil {
 			log.Printf("session logger init failed: %v", err)
 		} else {
@@ -38,6 +39,7 @@ func New(ws *websocket.Conn, store *persistence.Store, dataDir string) *Session 
 	}
 	return &Session{
 		id:     id,
+		userID: userID,
 		ws:     ws,
 		store:  store,
 		logger: logger,
@@ -46,6 +48,9 @@ func New(ws *websocket.Conn, store *persistence.Store, dataDir string) *Session 
 
 // ID returns the unique session identifier.
 func (s *Session) ID() string { return s.id }
+
+// UserID returns the authenticated user who owns this session.
+func (s *Session) UserID() string { return s.userID }
 
 // Read listens for the next message from the WebSocket.
 func (s *Session) Read() (websocket.MessageType, []byte, error) {

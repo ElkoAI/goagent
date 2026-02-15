@@ -21,9 +21,9 @@ type SessionLogger struct {
 	mu sync.Mutex
 }
 
-// NewSessionLogger creates or opens a JSONL file at <dataDir>/sessions/<sessionID>.jsonl.
-func NewSessionLogger(dataDir, sessionID string) (*SessionLogger, error) {
-	dir := filepath.Join(dataDir, "sessions")
+// NewSessionLogger creates or opens a JSONL file at <dataDir>/home/<userID>/sessions/<sessionID>.jsonl.
+func NewSessionLogger(dataDir, userID, sessionID string) (*SessionLogger, error) {
+	dir := filepath.Join(dataDir, "home", userID, "sessions")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
