@@ -15,14 +15,27 @@ type Section struct {
 
 // ReportConfig holds the user's daily report preferences.
 type ReportConfig struct {
-	Sections []Section `json:"sections"`
-	LLMEnabled       bool `json:"llm_enabled"`
-	WebSearchEnabled bool `json:"web_search_enabled"`
+	Title            string    `json:"title"`
+	Intro            string    `json:"intro"` // why this report exists and why it matters
+	Sections         []Section `json:"sections"`
+	LLMEnabled       bool      `json:"llm_enabled"`
+	WebSearchEnabled bool      `json:"web_search_enabled"`
 }
 
 // DefaultConfig returns the built-in default config with 5 sections.
 func DefaultConfig() ReportConfig {
 	return ReportConfig{
+		Title: "Daily Market Report",
+		Intro: "This report tracks 29 symbols across five sectors that together form a real-time " +
+			"map of global capital flows. US mega-cap tech (the \"Magnificent 7\") drives index " +
+			"weighting and sentiment worldwide. Chinese ADRs (the \"Dragons\") signal Asia's " +
+			"economic pulse and regulatory climate. Macro ETFs reveal broad risk appetite across " +
+			"large-cap, small-cap, and international markets. Precious metals gauge inflation " +
+			"expectations and flight-to-safety demand. Crypto tracks speculative liquidity and " +
+			"digital asset sentiment. When these five sectors diverge — tech sells off while gold " +
+			"rallies, or emerging markets outpace the S&P — it reveals rotation patterns, regime " +
+			"shifts, and macro inflection points often days before headlines catch up. That's why " +
+			"we watch them. That's why you should too.",
 		LLMEnabled:       true,
 		WebSearchEnabled: false,
 		Sections: []Section{

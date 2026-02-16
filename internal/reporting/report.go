@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"goagent/internal/llm"
@@ -26,10 +27,12 @@ type SectionReport struct {
 
 // DailyReport is the final assembled report ready for rendering.
 type DailyReport struct {
+	Title        string          `json:"title"`
+	Intro        string          `json:"intro,omitempty"` // why this report exists
 	Date         string          `json:"date"`
 	Timezone     string          `json:"timezone"`
 	Generated    string          `json:"generated"`
-	Summary      string          `json:"summary,omitempty"` // report-level overview
+	Summary      string          `json:"summary,omitempty"` // market pulse
 	TopGainers1D []SymbolData    `json:"top_gainers_1d"`
 	TopLosers1D  []SymbolData    `json:"top_losers_1d"`
 	TopGainers5D []SymbolData    `json:"top_gainers_5d"`
@@ -86,7 +89,14 @@ func GenerateDaily(opts Options) error {
 	// Build section reports.
 	getter1D := func(sd SymbolData) float64 { return sd.Change1D }
 
+	title := cfg.Title
+	if title == "" {
+		title = "Daily Market Report"
+	}
+
 	report := &DailyReport{
+		Title:        title,
+		Intro:        cfg.Intro,
 		Date:         opts.Date,
 		Timezone:     time.Now().Location().String(),
 		Generated:    time.Now().UTC().Format(time.RFC3339),
@@ -171,11 +181,49 @@ func GenerateDaily(opts Options) error {
 	return nil
 }
 
-// buildReportSummary creates the top-of-report overview paragraph.
+// buildReportSummary creates a compelling top-of-report market pulse.
 func buildReportSummary(report *DailyReport, symbolCount int) string {
-	sectionCount := len(report.Sections)
+	// Count breadth: gainers vs losers vs flat.
+	var gainers, losers, flat, totalVol int64
+	var sumChange float64
+	var count int
 
-	// Best gainer and worst loser from top movers.
+	for _, sec := range report.Sections {
+		for _, sd := range sec.Data {
+			if sd.Error != "" {
+				continue
+			}
+			count++
+			sumChange += sd.Change1D
+			totalVol += sd.Volume
+			switch {
+			case sd.Change1D > 0.1:
+				gainers++
+			case sd.Change1D < -0.1:
+				losers++
+			default:
+				flat++
+			}
+		}
+	}
+
+	// Market sentiment based on breadth ratio.
+	var sentiment string
+	if count > 0 {
+		ratio := float64(gainers) / float64(count)
+		switch {
+		case ratio >= 0.7:
+			sentiment = "🟢 Risk-On"
+		case ratio >= 0.5:
+			sentiment = "⚖️ Mixed"
+		case ratio >= 0.3:
+			sentiment = "🟡 Cautious"
+		default:
+			sentiment = "🔴 Risk-Off"
+		}
+	}
+
+	// Best gainer and worst loser.
 	var topGainer, topLoser string
 	if len(report.TopGainers1D) > 0 {
 		g := report.TopGainers1D[0]
@@ -186,12 +234,37 @@ func buildReportSummary(report *DailyReport, symbolCount int) string {
 		topLoser = fmt.Sprintf("%s %s (%+.2f%%)", PerformanceEmoji(l.Change1D), l.Symbol, l.Change1D)
 	}
 
-	summary := fmt.Sprintf("📊 Covering %d symbols across %d sectors.", symbolCount, sectionCount)
-	if topGainer != "" {
-		summary += fmt.Sprintf(" Top gainer: %s.", topGainer)
+	// Format volume.
+	var volStr string
+	switch {
+	case totalVol >= 1_000_000_000:
+		volStr = fmt.Sprintf("%.1fB", float64(totalVol)/1e9)
+	case totalVol >= 1_000_000:
+		volStr = fmt.Sprintf("%.0fM", float64(totalVol)/1e6)
+	default:
+		volStr = fmt.Sprintf("%d", totalVol)
 	}
-	if topLoser != "" {
-		summary += fmt.Sprintf(" Top loser: %s.", topLoser)
+
+	// Build the pulse line.
+	parts := []string{
+		fmt.Sprintf("%s Sentiment: %s", "📊", sentiment),
+		fmt.Sprintf("Breadth: %d↑ %d↓ %d➖ of %d symbols", gainers, losers, flat, count),
+		fmt.Sprintf("Volume: %s shares", volStr),
+	}
+
+	summary := strings.Join(parts, " | ")
+
+	if topGainer != "" || topLoser != "" {
+		summary += "\n"
+		if topGainer != "" {
+			summary += fmt.Sprintf("Top gainer: %s", topGainer)
+		}
+		if topLoser != "" {
+			if topGainer != "" {
+				summary += " · "
+			}
+			summary += fmt.Sprintf("Top loser: %s", topLoser)
+		}
 	}
 
 	return summary

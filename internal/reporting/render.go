@@ -11,10 +11,15 @@ import (
 func RenderMarkdown(report *DailyReport) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# Daily Market Report — %s\n\n", report.Date))
+	b.WriteString(fmt.Sprintf("# %s — %s\n\n", report.Title, report.Date))
 	b.WriteString(fmt.Sprintf("*Generated: %s | Timezone: %s*\n\n", report.Generated, report.Timezone))
 
-	// Report summary.
+	// Report intro — why this report exists.
+	if report.Intro != "" {
+		b.WriteString(fmt.Sprintf("> %s\n\n", report.Intro))
+	}
+
+	// Market pulse.
 	if report.Summary != "" {
 		b.WriteString(report.Summary + "\n\n")
 	}
@@ -77,8 +82,10 @@ func RenderMarkdown(report *DailyReport) string {
 	// Macro view.
 	if report.MacroView != "" {
 		b.WriteString("## 🌍 Macro Overview\n\n")
-		b.WriteString(report.MacroView + "\n")
+		b.WriteString(report.MacroView + "\n\n")
 	}
+
+	b.WriteString("---\n\n*© 2026-2027 Elko AI Financial. All rights reserved.*\n")
 
 	return b.String()
 }
@@ -134,19 +141,21 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Daily Market Report — {{.Date}}</title>
+<title>{{.Title}} — {{.Date}}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; color: #1a1a1a; background: #fafafa; }
   h1 { font-size: 1.6em; margin-bottom: 4px; }
   h2 { font-size: 1.2em; margin: 28px 0 8px; border-bottom: 2px solid #e0e0e0; padding-bottom: 6px; }
   .meta { color: #666; font-size: 0.85em; margin-bottom: 8px; }
-  .summary { font-size: 1.05em; margin: 8px 0 20px; padding: 12px 16px; background: #f0f4ff; border-left: 4px solid #4a7dff; border-radius: 4px; }
+  .intro { font-size: 0.92em; margin: 8px 0 16px; padding: 14px 18px; background: #f8f8f2; border-left: 4px solid #c8a850; border-radius: 4px; color: #555; line-height: 1.6; }
+  .summary { font-size: 1.05em; margin: 8px 0 20px; padding: 12px 16px; background: #f0f4ff; border-left: 4px solid #4a7dff; border-radius: 4px; white-space: pre-line; line-height: 1.6; }
   .at-a-glance { margin: 0 0 20px; padding: 0; }
-  .at-a-glance li { list-style: none; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 0.95em; }
+  .at-a-glance li { list-style: none; padding: 8px 0; border-bottom: 1px solid #eee; font-size: 0.95em; }
   .at-a-glance li:last-child { border-bottom: none; }
   .at-a-glance .sec-name { font-weight: 600; }
   .at-a-glance .sec-summary { color: #555; }
+  .at-a-glance .sec-about { display: block; color: #888; font-size: 0.85em; font-style: italic; margin-top: 2px; }
   .sec-desc { color: #666; font-size: 0.88em; font-style: italic; margin: 2px 0 6px; }
   .sec-summary-line { font-size: 0.95em; margin: 4px 0 10px; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 12px; font-size: 0.88em; }
@@ -172,13 +181,15 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
   .vol { color: #888; font-size: 0.9em; }
   .movers { display: flex; gap: 20px; flex-wrap: wrap; }
   .movers table { flex: 1; min-width: 300px; }
+  .footer { margin-top: 40px; padding: 16px 0; border-top: 2px solid #e0e0e0; text-align: center; color: #999; font-size: 0.8em; letter-spacing: 0.05em; }
   @media print { body { max-width: none; } .summary { background: #f8f8f8; } }
 </style>
 </head>
 <body>
-<h1>📊 Daily Market Report — {{.Date}}</h1>
+<h1>📊 {{.Title}} — {{.Date}}</h1>
 <p class="meta">Generated: {{.Generated}} | Timezone: {{.Timezone}}</p>
 
+{{if .Intro}}<div class="intro">{{.Intro}}</div>{{end}}
 {{if .Summary}}<div class="summary">{{.Summary}}</div>{{end}}
 
 <h2>📋 At a Glance</h2>
@@ -239,6 +250,8 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 <h2>🌍 Macro Overview</h2>
 <div class="macro">{{.MacroView}}</div>
 {{end}}
+
+<footer class="footer">© 2026-2027 Elko AI Financial. All rights reserved.</footer>
 
 </body>
 </html>`))
