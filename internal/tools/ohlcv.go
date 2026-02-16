@@ -75,6 +75,16 @@ func fetchCrumb(client *http.Client) (string, error) {
 	return crumb, nil
 }
 
+// uaTransport wraps http.RoundTripper to inject a browser User-Agent header.
+type uaTransport struct {
+	base http.RoundTripper
+}
+
+func (t *uaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+	return t.base.RoundTrip(req)
+}
+
 // getAuth returns a cached Yahoo auth (crumb + cookie client), initializing on first call.
 func getAuth() (*yahooAuth, error) {
 	authOnce.Do(func() {
@@ -83,7 +93,11 @@ func getAuth() (*yahooAuth, error) {
 			authErr = err
 			return
 		}
-		client := &http.Client{Jar: jar, Timeout: 15 * time.Second}
+		client := &http.Client{
+			Jar:       jar,
+			Timeout:   15 * time.Second,
+			Transport: &uaTransport{base: http.DefaultTransport},
+		}
 		crumb, err := fetchCrumb(client)
 		if err != nil {
 			authErr = err
@@ -196,6 +210,16 @@ func BarsToCSV(bars []OHLCVBar) string {
 			bar.Date, bar.Open, bar.High, bar.Low, bar.Close, bar.Volume)
 	}
 	return b.String()
+}
+
+// FetchBars is the public API for fetching OHLCV bars directly (no JSON-RPC).
+// Used by the reporting package and anything else that needs raw bar data.
+func FetchBars(symbol, dataRange, interval string) ([]OHLCVBar, string, error) {
+	auth, err := getAuth()
+	if err != nil {
+		return nil, "", fmt.Errorf("yahoo auth: %w", err)
+	}
+	return fetchOHLCV(auth, symbol, dataRange, interval)
 }
 
 // OHLCV is the tool entry point — called from the JSON-RPC dispatcher.
