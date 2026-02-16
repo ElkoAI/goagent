@@ -11,8 +11,7 @@ import (
 func RenderMarkdown(report *DailyReport) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# %s — %s\n\n", report.Title, report.Date))
-	b.WriteString(fmt.Sprintf("*Generated: %s | Timezone: %s*\n\n", report.Generated, report.Timezone))
+	b.WriteString(fmt.Sprintf("# %s — %s (%s)\n\n", report.Title, report.Date, report.Generated))
 
 	// Report intro — why this report exists.
 	if report.Intro != "" {
@@ -141,7 +140,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} — {{.Date}}</title>
+<title>{{.Title}} — {{.Date}} ({{.Generated}})</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; color: #1a1a1a; background: #fafafa; }
@@ -159,7 +158,12 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
   .sec-desc { color: #666; font-size: 0.88em; font-style: italic; margin: 2px 0 6px; }
   .sec-summary-line { font-size: 0.95em; margin: 4px 0 10px; }
   table { border-collapse: collapse; width: 100%; margin-bottom: 12px; font-size: 0.88em; }
-  th { background: #f0f0f0; text-align: left; padding: 7px 10px; border-bottom: 2px solid #ccc; font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.03em; color: #555; }
+  th { background: #f0f0f0; text-align: left; padding: 7px 10px; border-bottom: 2px solid #ccc; font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.03em; color: #555; user-select: none; }
+  th.sortable { cursor: pointer; position: relative; padding-right: 18px; }
+  th.sortable:hover { background: #e4e4e4; }
+  th.sortable::after { content: "⇅"; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 0.8em; color: #bbb; }
+  th.sortable.asc::after { content: "▲"; color: #555; }
+  th.sortable.desc::after { content: "▼"; color: #555; }
   td { padding: 6px 10px; border-bottom: 1px solid #eee; }
   tr:nth-child(even) td { background: #f8f8f8; }
   tr:hover td { background: #f0f0f0; }
@@ -186,8 +190,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 </style>
 </head>
 <body>
-<h1>📊 {{.Title}} — {{.Date}}</h1>
-<p class="meta">Generated: {{.Generated}} | Timezone: {{.Timezone}}</p>
+<h1>📊 {{.Title}} — {{.Date}} <span class="meta">({{.Generated}})</span></h1>
 
 {{if .Intro}}<div class="intro">{{.Intro}}</div>{{end}}
 {{if .Summary}}<div class="summary">{{.Summary}}</div>{{end}}
@@ -224,7 +227,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 {{if .Description}}<p class="sec-desc">{{.Description}}</p>{{end}}
 {{if .Summary}}<p class="sec-summary-line">{{.Summary}}</p>{{end}}
 <table>
-<tr><th></th><th>Symbol</th><th class="spark">5D</th><th class="num">Close</th><th class="num">1D %</th><th class="num">5D %</th><th class="num">1M %</th><th class="num">YTD %</th><th class="num">Vol</th></tr>
+<tr><th></th><th class="sortable" data-col="1" data-type="text">Symbol</th><th class="spark">5 Day</th><th class="num sortable" data-col="3" data-type="num">Close</th><th class="num sortable" data-col="4" data-type="pct">1D %</th><th class="num sortable" data-col="5" data-type="pct">5D %</th><th class="num sortable" data-col="6" data-type="pct">1M %</th><th class="num sortable" data-col="7" data-type="pct">YTD %</th><th class="num sortable" data-col="8" data-type="vol">Vol</th></tr>
 {{range .Data}}
 {{if .Error}}
 <tr><td class="emoji">⚠️</td><td>{{.Symbol}}</td><td colspan="7" class="error">{{.Error}}</td></tr>
@@ -252,6 +255,49 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 {{end}}
 
 <footer class="footer">© 2026-2027 Elko AI Financial. All rights reserved.</footer>
+
+<script>
+document.querySelectorAll('th.sortable').forEach(th => {
+  th.addEventListener('click', function() {
+    const table = this.closest('table');
+    const col = parseInt(this.dataset.col);
+    const type = this.dataset.type;
+    const tbody = table.querySelector('tbody') || table;
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.querySelector('th'));
+    const isAsc = this.classList.contains('asc');
+    table.querySelectorAll('th.sortable').forEach(h => h.classList.remove('asc','desc'));
+    this.classList.add(isAsc ? 'desc' : 'asc');
+    const dir = isAsc ? -1 : 1;
+    rows.sort((a, b) => {
+      const ca = a.cells[col], cb = b.cells[col];
+      if (!ca || !cb) return 0;
+      let va, vb;
+      if (type === 'text') {
+        va = ca.textContent.trim(); vb = cb.textContent.trim();
+        return dir * va.localeCompare(vb);
+      }
+      if (type === 'pct') {
+        va = parseFloat(ca.textContent.replace(/[%,]/g,'')); vb = parseFloat(cb.textContent.replace(/[%,]/g,''));
+      } else if (type === 'vol') {
+        va = parseVol(ca.textContent.trim()); vb = parseVol(cb.textContent.trim());
+      } else {
+        va = parseFloat(ca.textContent.replace(/,/g,'')); vb = parseFloat(cb.textContent.replace(/,/g,''));
+      }
+      if (isNaN(va)) va = 0; if (isNaN(vb)) vb = 0;
+      return dir * (va - vb);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  });
+});
+function parseVol(s) {
+  s = s.trim().toUpperCase();
+  const n = parseFloat(s);
+  if (s.endsWith('B')) return n * 1e9;
+  if (s.endsWith('M')) return n * 1e6;
+  if (s.endsWith('K')) return n * 1e3;
+  return n || 0;
+}
+</script>
 
 </body>
 </html>`))

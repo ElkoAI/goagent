@@ -91,7 +91,7 @@ func GenerateDaily(opts Options) error {
 
 	title := cfg.Title
 	if title == "" {
-		title = "Daily Market Report"
+		title = "ChartGeometry::AI::Financial - Daily Market Report"
 	}
 
 	report := &DailyReport{

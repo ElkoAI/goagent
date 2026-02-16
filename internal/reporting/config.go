@@ -25,7 +25,7 @@ type ReportConfig struct {
 // DefaultConfig returns the built-in default config with 5 sections.
 func DefaultConfig() ReportConfig {
 	return ReportConfig{
-		Title: "Daily Market Report",
+		Title: "ChartGeometry::AI::Financial - Daily Market Report",
 		Intro: "This report tracks 29 symbols across five sectors that together form a real-time " +
 			"map of global capital flows. US mega-cap tech (the \"Magnificent 7\") drives index " +
 			"weighting and sentiment worldwide. Chinese ADRs (the \"Dragons\") signal Asia's " +
