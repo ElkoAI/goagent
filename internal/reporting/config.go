@@ -8,8 +8,9 @@ import (
 
 // Section defines a group of symbols to track (e.g. "US Magnificent 7").
 type Section struct {
-	Name    string   `json:"name"`
-	Symbols []string `json:"symbols"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"` // what this section tracks and why it matters
+	Symbols     []string `json:"symbols"`
 }
 
 // ReportConfig holds the user's daily report preferences.
@@ -26,24 +27,29 @@ func DefaultConfig() ReportConfig {
 		WebSearchEnabled: false,
 		Sections: []Section{
 			{
-				Name:    "US Magnificent 7",
-				Symbols: []string{"AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"},
+				Name:        "US Magnificent 7",
+				Description: "The seven mega-cap tech stocks that dominate S&P 500 weighting and global market sentiment.",
+				Symbols:     []string{"AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"},
 			},
 			{
-				Name:    "China Dragons",
-				Symbols: []string{"BABA", "PDD", "JD", "BIDU", "NIO", "XPEV", "LI"},
+				Name:        "China Dragons",
+				Description: "Major Chinese ADRs listed in the US — a barometer for China's tech economy and regulatory climate.",
+				Symbols:     []string{"BABA", "PDD", "JD", "BIDU", "NIO", "XPEV", "LI"},
 			},
 			{
-				Name:    "Macro ETFs & Indexes",
-				Symbols: []string{"SPY", "QQQ", "DIA", "IWM", "VTI", "EFA", "EEM"},
+				Name:        "Macro ETFs & Indexes",
+				Description: "Broad market and international ETFs tracking US large-cap, small-cap, developed, and emerging markets.",
+				Symbols:     []string{"SPY", "QQQ", "DIA", "IWM", "VTI", "EFA", "EEM"},
 			},
 			{
-				Name:    "Precious Metals",
-				Symbols: []string{"GLD", "SLV", "GDX", "IAU"},
+				Name:        "Precious Metals",
+				Description: "Gold, silver, and mining ETFs — traditional safe-haven and inflation-hedge instruments.",
+				Symbols:     []string{"GLD", "SLV", "GDX", "IAU"},
 			},
 			{
-				Name:    "Crypto",
-				Symbols: []string{"BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"},
+				Name:        "Crypto",
+				Description: "Major cryptocurrencies — digital assets reflecting risk appetite and liquidity conditions.",
+				Symbols:     []string{"BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD"},
 			},
 		},
 	}

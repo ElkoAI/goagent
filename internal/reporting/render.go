@@ -14,21 +14,35 @@ func RenderMarkdown(report *DailyReport) string {
 	b.WriteString(fmt.Sprintf("# Daily Market Report — %s\n\n", report.Date))
 	b.WriteString(fmt.Sprintf("*Generated: %s | Timezone: %s*\n\n", report.Generated, report.Timezone))
 
+	// Report summary.
+	if report.Summary != "" {
+		b.WriteString(report.Summary + "\n\n")
+	}
+
+	// Section overview with emojis.
+	b.WriteString("## At a Glance\n\n")
+	for _, sec := range report.Sections {
+		b.WriteString(fmt.Sprintf("**%s** — %s\n", sec.Name, sec.Summary))
+	}
+	b.WriteString("\n")
+
 	// Top movers summary.
 	b.WriteString("## Top Movers (1D)\n\n")
 	if len(report.TopGainers1D) > 0 {
 		b.WriteString("### Gainers\n")
-		b.WriteString("| Symbol | Close | 1D % |\n|--------|------:|-----:|\n")
+		b.WriteString("| | Symbol | Close | 1D % |\n|---|--------|------:|-----:|\n")
 		for _, sd := range report.TopGainers1D {
-			b.WriteString(fmt.Sprintf("| %s | %.2f | %+.2f%% |\n", sd.Symbol, sd.LastClose, sd.Change1D))
+			b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% |\n",
+				PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose, sd.Change1D))
 		}
 		b.WriteString("\n")
 	}
 	if len(report.TopLosers1D) > 0 {
 		b.WriteString("### Losers\n")
-		b.WriteString("| Symbol | Close | 1D % |\n|--------|------:|-----:|\n")
+		b.WriteString("| | Symbol | Close | 1D % |\n|---|--------|------:|-----:|\n")
 		for _, sd := range report.TopLosers1D {
-			b.WriteString(fmt.Sprintf("| %s | %.2f | %+.2f%% |\n", sd.Symbol, sd.LastClose, sd.Change1D))
+			b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% |\n",
+				PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose, sd.Change1D))
 		}
 		b.WriteString("\n")
 	}
@@ -36,14 +50,21 @@ func RenderMarkdown(report *DailyReport) string {
 	// Per-section tables.
 	for _, sec := range report.Sections {
 		b.WriteString(fmt.Sprintf("## %s\n\n", sec.Name))
-		b.WriteString("| Symbol | Close | 1D %% | 5D %% | 1M %% | YTD %% | Volume |\n")
-		b.WriteString("|--------|------:|------:|------:|------:|-------:|-------:|\n")
+		if sec.Description != "" {
+			b.WriteString(fmt.Sprintf("*%s*\n\n", sec.Description))
+		}
+		if sec.Summary != "" {
+			b.WriteString(sec.Summary + "\n\n")
+		}
+		b.WriteString("| | Symbol | Close | 1D %% | 5D %% | 1M %% | YTD %% | Volume |\n")
+		b.WriteString("|---|--------|------:|------:|------:|------:|-------:|-------:|\n")
 		for _, sd := range sec.Data {
 			if sd.Error != "" {
-				b.WriteString(fmt.Sprintf("| %s | — | — | — | — | — | *%s* |\n", sd.Symbol, sd.Error))
+				b.WriteString(fmt.Sprintf("| ⚠️ | %s | — | — | — | — | — | *%s* |\n", sd.Symbol, sd.Error))
 			} else {
-				b.WriteString(fmt.Sprintf("| %s | %.2f | %+.2f%% | %+.2f%% | %+.2f%% | %+.2f%% | %d |\n",
-					sd.Symbol, sd.LastClose, sd.Change1D, sd.Change5D, sd.Change1M, sd.ChangeYTD, sd.Volume))
+				b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% | %+.2f%% | %+.2f%% | %+.2f%% | %d |\n",
+					PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose,
+					sd.Change1D, sd.Change5D, sd.Change1M, sd.ChangeYTD, sd.Volume))
 			}
 		}
 		b.WriteString("\n")
@@ -55,7 +76,7 @@ func RenderMarkdown(report *DailyReport) string {
 
 	// Macro view.
 	if report.MacroView != "" {
-		b.WriteString("## Macro Overview\n\n")
+		b.WriteString("## 🌍 Macro Overview\n\n")
 		b.WriteString(report.MacroView + "\n")
 	}
 
@@ -70,7 +91,16 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 		if v < 0 {
 			return "neg"
 		}
-		return ""
+		return "flat"
+	},
+	"symClass": func(v float64) string {
+		if v > 0 {
+			return "sym-up"
+		}
+		if v < 0 {
+			return "sym-down"
+		}
+		return "sym-flat"
 	},
 	"fmtPct": func(v float64) string {
 		return fmt.Sprintf("%+.2f%%", v)
@@ -78,8 +108,26 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 	"fmtPrice": func(v float64) string {
 		return fmt.Sprintf("%.2f", v)
 	},
+	"fmtVol": func(v int64) string {
+		switch {
+		case v >= 1_000_000_000:
+			return fmt.Sprintf("%.1fB", float64(v)/1e9)
+		case v >= 1_000_000:
+			return fmt.Sprintf("%.1fM", float64(v)/1e6)
+		case v >= 1_000:
+			return fmt.Sprintf("%.1fK", float64(v)/1e3)
+		default:
+			return fmt.Sprintf("%d", v)
+		}
+	},
+	"emoji": func(v float64) string {
+		return PerformanceEmoji(v)
+	},
 	"rawSVG": func(s string) template.HTML {
 		return template.HTML(s)
+	},
+	"yfinLink": func(symbol string) string {
+		return "https://finance.yahoo.com/quote/" + symbol
 	},
 }).Parse(`<!DOCTYPE html>
 <html lang="en">
@@ -89,67 +137,97 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 <title>Daily Market Report — {{.Date}}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 0 auto; padding: 20px; color: #1a1a1a; background: #fafafa; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; color: #1a1a1a; background: #fafafa; }
   h1 { font-size: 1.6em; margin-bottom: 4px; }
-  h2 { font-size: 1.2em; margin: 24px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
-  h3 { font-size: 1em; margin: 12px 0 4px; }
-  .meta { color: #666; font-size: 0.85em; margin-bottom: 16px; }
-  table { border-collapse: collapse; width: 100%; margin-bottom: 12px; font-size: 0.9em; }
-  th { background: #f0f0f0; text-align: left; padding: 6px 10px; border-bottom: 2px solid #ccc; }
-  td { padding: 5px 10px; border-bottom: 1px solid #eee; }
+  h2 { font-size: 1.2em; margin: 28px 0 8px; border-bottom: 2px solid #e0e0e0; padding-bottom: 6px; }
+  .meta { color: #666; font-size: 0.85em; margin-bottom: 8px; }
+  .summary { font-size: 1.05em; margin: 8px 0 20px; padding: 12px 16px; background: #f0f4ff; border-left: 4px solid #4a7dff; border-radius: 4px; }
+  .at-a-glance { margin: 0 0 20px; padding: 0; }
+  .at-a-glance li { list-style: none; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 0.95em; }
+  .at-a-glance li:last-child { border-bottom: none; }
+  .at-a-glance .sec-name { font-weight: 600; }
+  .at-a-glance .sec-summary { color: #555; }
+  .sec-desc { color: #666; font-size: 0.88em; font-style: italic; margin: 2px 0 6px; }
+  .sec-summary-line { font-size: 0.95em; margin: 4px 0 10px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 12px; font-size: 0.88em; }
+  th { background: #f0f0f0; text-align: left; padding: 7px 10px; border-bottom: 2px solid #ccc; font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.03em; color: #555; }
+  td { padding: 6px 10px; border-bottom: 1px solid #eee; }
   tr:nth-child(even) td { background: #f8f8f8; }
+  tr:hover td { background: #f0f0f0; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .pos { color: #16a34a; }
-  .neg { color: #dc2626; }
-  .narrative { margin: 8px 0 16px; line-height: 1.5; white-space: pre-wrap; }
-  .macro { margin: 8px 0; line-height: 1.6; white-space: pre-wrap; }
+  .pos { color: #16a34a; font-weight: 500; }
+  .neg { color: #dc2626; font-weight: 500; }
+  .flat { color: #888; }
+  .sym-up { color: #16a34a; font-weight: 600; }
+  .sym-down { color: #dc2626; font-weight: 600; }
+  .sym-flat { color: #555; font-weight: 600; }
+  .sym-up a, .sym-down a, .sym-flat a { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+  .sym-up a:hover, .sym-down a:hover, .sym-flat a:hover { border-bottom-style: solid; }
+  .emoji { text-align: center; font-size: 1.1em; width: 30px; }
+  .narrative { margin: 10px 0 16px; padding: 12px 16px; line-height: 1.6; white-space: pre-wrap; background: #fafff5; border-left: 3px solid #c0d8a0; border-radius: 4px; font-size: 0.92em; }
+  .macro { margin: 10px 0; padding: 14px 18px; line-height: 1.7; white-space: pre-wrap; background: #f5f5ff; border-left: 3px solid #a0a0d8; border-radius: 4px; font-size: 0.95em; }
   .error { color: #999; font-style: italic; }
   .spark { text-align: center; padding: 2px 4px; }
   .spark svg { vertical-align: middle; }
-  @media print { body { max-width: none; } }
+  .vol { color: #888; font-size: 0.9em; }
+  .movers { display: flex; gap: 20px; flex-wrap: wrap; }
+  .movers table { flex: 1; min-width: 300px; }
+  @media print { body { max-width: none; } .summary { background: #f8f8f8; } }
 </style>
 </head>
 <body>
-<h1>Daily Market Report — {{.Date}}</h1>
+<h1>📊 Daily Market Report — {{.Date}}</h1>
 <p class="meta">Generated: {{.Generated}} | Timezone: {{.Timezone}}</p>
 
-{{if .TopGainers1D}}
-<h2>Top Gainers (1D)</h2>
-<table>
-<tr><th>Symbol</th><th class="num">Close</th><th class="num">1D %</th></tr>
-{{range .TopGainers1D}}
-<tr><td>{{.Symbol}}</td><td class="num">{{fmtPrice .LastClose}}</td><td class="num pos">{{fmtPct .Change1D}}</td></tr>
-{{end}}
-</table>
-{{end}}
+{{if .Summary}}<div class="summary">{{.Summary}}</div>{{end}}
 
-{{if .TopLosers1D}}
-<h2>Top Losers (1D)</h2>
+<h2>📋 At a Glance</h2>
+<ul class="at-a-glance">
+{{range .Sections}}
+<li><span class="sec-name">{{.Name}}</span> — <span class="sec-summary">{{.Summary}}</span></li>
+{{end}}
+</ul>
+
+<h2>🏆 Top Movers (1D)</h2>
+<div class="movers">
+{{if .TopGainers1D}}
 <table>
-<tr><th>Symbol</th><th class="num">Close</th><th class="num">1D %</th></tr>
-{{range .TopLosers1D}}
-<tr><td>{{.Symbol}}</td><td class="num">{{fmtPrice .LastClose}}</td><td class="num neg">{{fmtPct .Change1D}}</td></tr>
+<tr><th></th><th>Gainers</th><th class="num">Close</th><th class="num">1D %</th></tr>
+{{range .TopGainers1D}}
+<tr><td class="emoji">{{emoji .Change1D}}</td><td class="sym-up"><a href="{{yfinLink .Symbol}}" target="_blank">{{.Symbol}}</a></td><td class="num">{{fmtPrice .LastClose}}</td><td class="num pos">{{fmtPct .Change1D}}</td></tr>
 {{end}}
 </table>
 {{end}}
+{{if .TopLosers1D}}
+<table>
+<tr><th></th><th>Losers</th><th class="num">Close</th><th class="num">1D %</th></tr>
+{{range .TopLosers1D}}
+<tr><td class="emoji">{{emoji .Change1D}}</td><td class="sym-down"><a href="{{yfinLink .Symbol}}" target="_blank">{{.Symbol}}</a></td><td class="num">{{fmtPrice .LastClose}}</td><td class="num neg">{{fmtPct .Change1D}}</td></tr>
+{{end}}
+</table>
+{{end}}
+</div>
 
 {{range .Sections}}
 <h2>{{.Name}}</h2>
+{{if .Description}}<p class="sec-desc">{{.Description}}</p>{{end}}
+{{if .Summary}}<p class="sec-summary-line">{{.Summary}}</p>{{end}}
 <table>
-<tr><th>Symbol</th><th class="spark">5D</th><th class="num">Close</th><th class="num">1D %</th><th class="num">5D %</th><th class="num">1M %</th><th class="num">YTD %</th><th class="num">Volume</th></tr>
+<tr><th></th><th>Symbol</th><th class="spark">5D</th><th class="num">Close</th><th class="num">1D %</th><th class="num">5D %</th><th class="num">1M %</th><th class="num">YTD %</th><th class="num">Vol</th></tr>
 {{range .Data}}
 {{if .Error}}
-<tr><td>{{.Symbol}}</td><td colspan="7" class="error">{{.Error}}</td></tr>
+<tr><td class="emoji">⚠️</td><td>{{.Symbol}}</td><td colspan="7" class="error">{{.Error}}</td></tr>
 {{else}}
 <tr>
-  <td>{{.Symbol}}</td>
+  <td class="emoji">{{emoji .Change1D}}</td>
+  <td class="{{symClass .Change1D}}"><a href="{{yfinLink .Symbol}}" target="_blank">{{.Symbol}}</a></td>
   <td class="spark">{{if .Sparkline}}{{rawSVG .Sparkline}}{{end}}</td>
   <td class="num">{{fmtPrice .LastClose}}</td>
   <td class="num {{pctClass .Change1D}}">{{fmtPct .Change1D}}</td>
   <td class="num {{pctClass .Change5D}}">{{fmtPct .Change5D}}</td>
   <td class="num {{pctClass .Change1M}}">{{fmtPct .Change1M}}</td>
   <td class="num {{pctClass .ChangeYTD}}">{{fmtPct .ChangeYTD}}</td>
-  <td class="num">{{.Volume}}</td>
+  <td class="num vol">{{fmtVol .Volume}}</td>
 </tr>
 {{end}}
 {{end}}
@@ -158,7 +236,7 @@ var htmlTmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 {{end}}
 
 {{if .MacroView}}
-<h2>Macro Overview</h2>
+<h2>🌍 Macro Overview</h2>
 <div class="macro">{{.MacroView}}</div>
 {{end}}
 

@@ -11,6 +11,7 @@ import (
 const sectionNarrativePrompt = `You are a concise financial analyst. Given the following market data for the "%s" section, write 3-5 bullet points summarizing key movements.
 
 Rules:
+- Start each bullet with a performance emoji: 🚀 (>5%%), 📈 (>2%%), 🟢 (>0.5%%), ➖ (flat), 🔴 (<-0.5%%), 📉 (<-2%%), 💥 (<-5%%)
 - Reference exact numbers (prices, percentages)
 - Note standout movers (biggest gains/losses)
 - Keep each bullet to 1-2 sentences
@@ -28,6 +29,7 @@ Rules:
 - Note any notable divergences between sectors
 - Keep it concise and actionable
 - No disclaimers or preamble
+- Use performance emojis where appropriate: 🚀 📈 🟢 ➖ 🔴 📉 💥
 
 Data:
 %s`

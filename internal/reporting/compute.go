@@ -132,6 +132,86 @@ func TopLosers(all []SymbolData, getter func(SymbolData) float64, n int) []Symbo
 	return RankMovers(all, getter, n, false)
 }
 
+// PerformanceEmoji returns an emoji reflecting the magnitude and direction of a % change.
+func PerformanceEmoji(pct float64) string {
+	switch {
+	case pct >= 5:
+		return "🚀"
+	case pct >= 2:
+		return "📈"
+	case pct >= 0.5:
+		return "🟢"
+	case pct > -0.5:
+		return "➖"
+	case pct > -2:
+		return "🔴"
+	case pct > -5:
+		return "📉"
+	default:
+		return "💥"
+	}
+}
+
+// SectionSummaryLine generates a one-line performance summary for a section.
+// e.g. "📉 Broadly lower — avg 1D: -1.42%, led by AAPL (-2.27%)"
+func SectionSummaryLine(data []SymbolData) string {
+	if len(data) == 0 {
+		return ""
+	}
+
+	var sum float64
+	var count int
+	var bestSym, worstSym string
+	var bestVal, worstVal float64
+	first := true
+
+	for _, sd := range data {
+		if sd.Error != "" {
+			continue
+		}
+		sum += sd.Change1D
+		count++
+		if first || sd.Change1D > bestVal {
+			bestVal = sd.Change1D
+			bestSym = sd.Symbol
+		}
+		if first || sd.Change1D < worstVal {
+			worstVal = sd.Change1D
+			worstSym = sd.Symbol
+		}
+		first = false
+	}
+
+	if count == 0 {
+		return "⚠️ No data available"
+	}
+
+	avg := roundTo(sum/float64(count), 2)
+	emoji := PerformanceEmoji(avg)
+
+	var tone string
+	switch {
+	case avg >= 2:
+		tone = "Strong rally"
+	case avg >= 0.5:
+		tone = "Broadly higher"
+	case avg > -0.5:
+		tone = "Mixed session"
+	case avg > -2:
+		tone = "Broadly lower"
+	default:
+		tone = "Sharp selloff"
+	}
+
+	// Highlight the standout mover (best if positive avg, worst if negative).
+	standout := fmt.Sprintf("%s (%+.2f%%)", bestSym, bestVal)
+	if avg < 0 {
+		standout = fmt.Sprintf("%s (%+.2f%%)", worstSym, worstVal)
+	}
+
+	return fmt.Sprintf("%s %s — avg 1D: %+.2f%%, led by %s", emoji, tone, avg, standout)
+}
+
 // SparklineSVG generates an inline SVG sparkline from OHLCV bar close prices.
 // Returns a complete <svg> element string. Width/height are in pixels.
 func SparklineSVG(bars []tools.OHLCVBar, width, height int) string {

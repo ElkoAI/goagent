@@ -17,9 +17,11 @@ const topMoversCount = 5
 
 // SectionReport holds computed data and optional narrative for a config section.
 type SectionReport struct {
-	Name      string       `json:"name"`
-	Data      []SymbolData `json:"data"`
-	Narrative string       `json:"narrative,omitempty"`
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"` // what this section tracks
+	Summary     string       `json:"summary,omitempty"`     // one-liner with emoji
+	Data        []SymbolData `json:"data"`
+	Narrative   string       `json:"narrative,omitempty"`
 }
 
 // DailyReport is the final assembled report ready for rendering.
@@ -27,6 +29,7 @@ type DailyReport struct {
 	Date         string          `json:"date"`
 	Timezone     string          `json:"timezone"`
 	Generated    string          `json:"generated"`
+	Summary      string          `json:"summary,omitempty"` // report-level overview
 	TopGainers1D []SymbolData    `json:"top_gainers_1d"`
 	TopLosers1D  []SymbolData    `json:"top_losers_1d"`
 	TopGainers5D []SymbolData    `json:"top_gainers_5d"`
@@ -100,7 +103,10 @@ func GenerateDaily(opts Options) error {
 	}
 
 	for _, sec := range cfg.Sections {
-		sr := SectionReport{Name: sec.Name}
+		sr := SectionReport{
+			Name:        sec.Name,
+			Description: sec.Description,
+		}
 		for _, sym := range sec.Symbols {
 			if sd, ok := computed[sym]; ok {
 				sr.Data = append(sr.Data, sd)
@@ -108,6 +114,9 @@ func GenerateDaily(opts Options) error {
 				sr.Data = append(sr.Data, SymbolData{Symbol: sym, Error: "not fetched"})
 			}
 		}
+
+		// Compute section summary line with emoji.
+		sr.Summary = SectionSummaryLine(sr.Data)
 
 		// Generate per-section narrative.
 		if client != nil {
@@ -117,6 +126,9 @@ func GenerateDaily(opts Options) error {
 
 		report.Sections = append(report.Sections, sr)
 	}
+
+	// Build report-level summary.
+	report.Summary = buildReportSummary(report, countSymbols(cfg.Sections))
 
 	// Generate macro overview.
 	if client != nil {
@@ -157,6 +169,32 @@ func GenerateDaily(opts Options) error {
 
 	log.Printf("Done. Report written to %s", outDir)
 	return nil
+}
+
+// buildReportSummary creates the top-of-report overview paragraph.
+func buildReportSummary(report *DailyReport, symbolCount int) string {
+	sectionCount := len(report.Sections)
+
+	// Best gainer and worst loser from top movers.
+	var topGainer, topLoser string
+	if len(report.TopGainers1D) > 0 {
+		g := report.TopGainers1D[0]
+		topGainer = fmt.Sprintf("%s %s (%+.2f%%)", PerformanceEmoji(g.Change1D), g.Symbol, g.Change1D)
+	}
+	if len(report.TopLosers1D) > 0 {
+		l := report.TopLosers1D[0]
+		topLoser = fmt.Sprintf("%s %s (%+.2f%%)", PerformanceEmoji(l.Change1D), l.Symbol, l.Change1D)
+	}
+
+	summary := fmt.Sprintf("📊 Covering %d symbols across %d sectors.", symbolCount, sectionCount)
+	if topGainer != "" {
+		summary += fmt.Sprintf(" Top gainer: %s.", topGainer)
+	}
+	if topLoser != "" {
+		summary += fmt.Sprintf(" Top loser: %s.", topLoser)
+	}
+
+	return summary
 }
 
 func countSymbols(sections []Section) int {

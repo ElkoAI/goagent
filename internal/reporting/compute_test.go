@@ -203,6 +203,64 @@ func TestSparklineSVG_TooFewBars(t *testing.T) {
 	}
 }
 
+func TestPerformanceEmoji(t *testing.T) {
+	tests := []struct {
+		pct      float64
+		expected string
+	}{
+		{6.0, "🚀"},
+		{3.0, "📈"},
+		{1.0, "🟢"},
+		{0.0, "➖"},
+		{-1.0, "🔴"},
+		{-3.0, "📉"},
+		{-6.0, "💥"},
+	}
+	for _, tc := range tests {
+		got := PerformanceEmoji(tc.pct)
+		if got != tc.expected {
+			t.Errorf("PerformanceEmoji(%.1f) = %q, want %q", tc.pct, got, tc.expected)
+		}
+	}
+}
+
+func TestSectionSummaryLine(t *testing.T) {
+	data := []SymbolData{
+		{Symbol: "A", Change1D: -2.0},
+		{Symbol: "B", Change1D: -1.0},
+		{Symbol: "C", Change1D: 0.5},
+	}
+
+	summary := SectionSummaryLine(data)
+	if summary == "" {
+		t.Fatal("expected non-empty summary")
+	}
+	// Negative avg → should mention the worst performer
+	if !strings.Contains(summary, "A") {
+		t.Errorf("expected worst symbol A in summary, got: %s", summary)
+	}
+	if !strings.Contains(summary, "📉") && !strings.Contains(summary, "🔴") {
+		t.Errorf("expected negative emoji in summary, got: %s", summary)
+	}
+}
+
+func TestSectionSummaryLine_Empty(t *testing.T) {
+	summary := SectionSummaryLine(nil)
+	if summary != "" {
+		t.Errorf("expected empty for nil data, got: %s", summary)
+	}
+}
+
+func TestSectionSummaryLine_AllErrors(t *testing.T) {
+	data := []SymbolData{
+		{Symbol: "A", Error: "failed"},
+	}
+	summary := SectionSummaryLine(data)
+	if !strings.Contains(summary, "⚠️") {
+		t.Errorf("expected warning emoji for all-error data, got: %s", summary)
+	}
+}
+
 func TestRoundTo(t *testing.T) {
 	if got := roundTo(3.14159, 2); got != 3.14 {
 		t.Errorf("roundTo(3.14159, 2) = %v, want 3.14", got)
