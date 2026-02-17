@@ -168,18 +168,28 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 
 	case "skill.list":
 		type entry struct {
-			Name        string   `json:"name"`
-			Description string   `json:"description"`
-			Ready       bool     `json:"ready"`
-			Missing     []string `json:"missing,omitempty"`
+			Name          string   `json:"name"`
+			Description   string   `json:"description"`
+			Version       string   `json:"version,omitempty"`
+			Emoji         string   `json:"emoji,omitempty"`
+			Ready         bool     `json:"ready"`
+			Missing       []string `json:"missing,omitempty"`
+			Always        bool     `json:"always,omitempty"`
+			UserInvocable bool     `json:"user_invocable"`
+			OS            []string `json:"os,omitempty"`
 		}
 		var list []entry
 		for _, sk := range s.skills.Skills {
 			list = append(list, entry{
-				Name:        sk.Name,
-				Description: sk.Description,
-				Ready:       sk.Ready,
-				Missing:     sk.Missing,
+				Name:          sk.Name,
+				Description:   sk.Description,
+				Version:       sk.Version,
+				Emoji:         sk.Emoji,
+				Ready:         sk.Ready,
+				Missing:       sk.Missing,
+				Always:        sk.Always,
+				UserInvocable: sk.UserInvocable,
+				OS:            sk.OS,
 			})
 		}
 		sess.WriteResponse(req.ID, map[string]any{"skills": list}, nil)
@@ -192,6 +202,46 @@ func (s *Server) dispatch(sess *session.Session, req *protocol.Request) {
 				"loaded": len(s.skills.Skills),
 				"ready":  len(s.skills.Ready()),
 			}, nil)
+		}
+
+	case "skill.install":
+		var params struct {
+			Source string `json:"source"`
+		}
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			sess.WriteError(req.ID, -32602, "Invalid params", nil)
+			return
+		}
+		sk, err := s.skills.Install(params.Source)
+		if err != nil {
+			sess.WriteError(req.ID, -32000, "install: "+err.Error(), nil)
+		} else {
+			sess.WriteResponse(req.ID, map[string]any{
+				"status":  "installed",
+				"name":    sk.Name,
+				"version": sk.Version,
+				"ready":   sk.Ready,
+				"missing": sk.Missing,
+			}, nil)
+			go s.store.AutoCommit("skill:installed:" + sk.Name)
+		}
+
+	case "skill.remove":
+		var params struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			sess.WriteError(req.ID, -32602, "Invalid params", nil)
+			return
+		}
+		if err := s.skills.Remove(params.Name); err != nil {
+			sess.WriteError(req.ID, -32000, "remove: "+err.Error(), nil)
+		} else {
+			sess.WriteResponse(req.ID, map[string]any{
+				"status": "removed",
+				"name":   params.Name,
+			}, nil)
+			go s.store.AutoCommit("skill:removed:" + params.Name)
 		}
 
 	case "agent.create":

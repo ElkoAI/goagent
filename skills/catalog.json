@@ -1,0 +1,10 @@
+{
+  "skills": [
+    {
+      "name": "deploy-web",
+      "description": "Deploy files to a remote web host via rsync over SSH",
+      "version": "1.0.0",
+      "source": "skills/deploy-web"
+    }
+  ]
+}
