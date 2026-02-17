@@ -3,6 +3,7 @@ package reporting
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"os"
 	"path/filepath"
@@ -30,9 +31,11 @@ type DailyReport struct {
 	Title        string          `json:"title"`
 	Intro        string          `json:"intro,omitempty"` // why this report exists
 	Date         string          `json:"date"`
+	DateDisplay  string          `json:"date_display"` // formatted display date (e.g. "Feb 16 2026")
 	Timezone     string          `json:"timezone"`
 	Generated    string          `json:"generated"`
 	Summary      string          `json:"summary,omitempty"` // market pulse
+	CSS          template.CSS    `json:"-"`                  // injected CSS for HTML rendering
 	TopGainers1D []SymbolData    `json:"top_gainers_1d"`
 	TopLosers1D  []SymbolData    `json:"top_losers_1d"`
 	TopGainers5D []SymbolData    `json:"top_gainers_5d"`
@@ -91,13 +94,20 @@ func GenerateDaily(opts Options) error {
 
 	title := cfg.Title
 	if title == "" {
-		title = "ChartGeometry::AI::Financial - Daily Market Report"
+		title = "ChartGeometry Daily Market Report"
+	}
+
+	// Format display date (e.g. "Feb 16 2026").
+	dateDisplay := opts.Date
+	if t, err := time.Parse("2006-01-02", opts.Date); err == nil {
+		dateDisplay = t.Format("Jan 02 2006")
 	}
 
 	report := &DailyReport{
 		Title:        title,
 		Intro:        cfg.Intro,
 		Date:         opts.Date,
+		DateDisplay:  dateDisplay,
 		Timezone:     time.Now().Location().String(),
 		Generated:    time.Now().UTC().Format(time.RFC3339),
 		TopGainers1D: TopGainers(allSymbols, getter1D, topMoversCount),
@@ -213,13 +223,13 @@ func buildReportSummary(report *DailyReport, symbolCount int) string {
 		ratio := float64(gainers) / float64(count)
 		switch {
 		case ratio >= 0.7:
-			sentiment = "🟢 Risk-On"
+			sentiment = "Risk-On"
 		case ratio >= 0.5:
-			sentiment = "⚖️ Mixed"
+			sentiment = "Mixed"
 		case ratio >= 0.3:
-			sentiment = "🟡 Cautious"
+			sentiment = "Cautious"
 		default:
-			sentiment = "🔴 Risk-Off"
+			sentiment = "Risk-Off"
 		}
 	}
 
@@ -227,11 +237,11 @@ func buildReportSummary(report *DailyReport, symbolCount int) string {
 	var topGainer, topLoser string
 	if len(report.TopGainers1D) > 0 {
 		g := report.TopGainers1D[0]
-		topGainer = fmt.Sprintf("%s %s (%+.2f%%)", PerformanceEmoji(g.Change1D), g.Symbol, g.Change1D)
+		topGainer = fmt.Sprintf("%s (%+.2f%%)", g.Symbol, g.Change1D)
 	}
 	if len(report.TopLosers1D) > 0 {
 		l := report.TopLosers1D[0]
-		topLoser = fmt.Sprintf("%s %s (%+.2f%%)", PerformanceEmoji(l.Change1D), l.Symbol, l.Change1D)
+		topLoser = fmt.Sprintf("%s (%+.2f%%)", l.Symbol, l.Change1D)
 	}
 
 	// Format volume.
@@ -247,7 +257,7 @@ func buildReportSummary(report *DailyReport, symbolCount int) string {
 
 	// Build the pulse line.
 	parts := []string{
-		fmt.Sprintf("%s Sentiment: %s", "📊", sentiment),
+		fmt.Sprintf("Sentiment: %s", sentiment),
 		fmt.Sprintf("Breadth: %d↑ %d↓ %d➖ of %d symbols", gainers, losers, flat, count),
 		fmt.Sprintf("Volume: %s shares", volStr),
 	}

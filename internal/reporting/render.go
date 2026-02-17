@@ -2,14 +2,17 @@ package reporting
 
 import (
 	"bytes"
-	"embed"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"strings"
 )
 
 //go:embed templates/report.html
-var templateFS embed.FS
+var reportHTML string
+
+//go:embed templates/theme-default.css
+var defaultCSS string
 
 // templateFuncs are shared template functions for HTML rendering.
 var templateFuncs = template.FuncMap{
@@ -49,28 +52,40 @@ var templateFuncs = template.FuncMap{
 			return fmt.Sprintf("%d", v)
 		}
 	},
-	"emoji": func(v float64) string {
-		return PerformanceEmoji(v)
-	},
 	"rawSVG": func(s string) template.HTML {
 		return template.HTML(s)
 	},
 	"yfinLink": func(symbol string) string {
 		return "https://finance.yahoo.com/quote/" + symbol
 	},
+	"logoSVG": func(symbol string) template.HTML {
+		return LogoSVG(symbol)
+	},
 }
 
 var htmlTmpl = template.Must(
-	template.New("report.html").Funcs(templateFuncs).ParseFS(templateFS, "templates/report.html"),
+	template.New("report").Funcs(templateFuncs).Parse(reportHTML),
 )
+
+// textIndicator returns a plain-text direction indicator for markdown tables.
+func textIndicator(v float64) string {
+	if v > 0.1 {
+		return "▲"
+	}
+	if v < -0.1 {
+		return "▼"
+	}
+	return "—"
+}
 
 // RenderMarkdown produces a complete markdown report.
 func RenderMarkdown(report *DailyReport) string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("# %s — %s (%s)\n\n", report.Title, report.Date, report.Generated))
+	b.WriteString(fmt.Sprintf("# %s — %s\n\n", report.Title, report.DateDisplay))
+	b.WriteString(fmt.Sprintf("*Generated: %s (%s)*\n\n", report.Generated, report.Timezone))
 
-	// Report intro — why this report exists.
+	// Report intro.
 	if report.Intro != "" {
 		b.WriteString(fmt.Sprintf("> %s\n\n", report.Intro))
 	}
@@ -80,10 +95,10 @@ func RenderMarkdown(report *DailyReport) string {
 		b.WriteString(report.Summary + "\n\n")
 	}
 
-	// Section overview with emojis.
+	// Section overview (emojis kept here via SectionSummaryLine).
 	b.WriteString("## At a Glance\n\n")
 	for _, sec := range report.Sections {
-		b.WriteString(fmt.Sprintf("**%s** — %s\n", sec.Name, sec.Summary))
+		b.WriteString(fmt.Sprintf("- **%s** — %s\n", sec.Name, sec.Summary))
 	}
 	b.WriteString("\n")
 
@@ -91,19 +106,19 @@ func RenderMarkdown(report *DailyReport) string {
 	b.WriteString("## Top Movers (1D)\n\n")
 	if len(report.TopGainers1D) > 0 {
 		b.WriteString("### Gainers\n")
-		b.WriteString("| | Symbol | Close | 1D % |\n|---|--------|------:|-----:|\n")
+		b.WriteString("| Symbol | Close | 1D % |\n|--------|------:|-----:|\n")
 		for _, sd := range report.TopGainers1D {
-			b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% |\n",
-				PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose, sd.Change1D))
+			b.WriteString(fmt.Sprintf("| %s | %.2f | %+.2f%% |\n",
+				sd.Symbol, sd.LastClose, sd.Change1D))
 		}
 		b.WriteString("\n")
 	}
 	if len(report.TopLosers1D) > 0 {
 		b.WriteString("### Losers\n")
-		b.WriteString("| | Symbol | Close | 1D % |\n|---|--------|------:|-----:|\n")
+		b.WriteString("| Symbol | Close | 1D % |\n|--------|------:|-----:|\n")
 		for _, sd := range report.TopLosers1D {
-			b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% |\n",
-				PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose, sd.Change1D))
+			b.WriteString(fmt.Sprintf("| %s | %.2f | %+.2f%% |\n",
+				sd.Symbol, sd.LastClose, sd.Change1D))
 		}
 		b.WriteString("\n")
 	}
@@ -121,10 +136,10 @@ func RenderMarkdown(report *DailyReport) string {
 		b.WriteString("|---|--------|------:|------:|------:|------:|-------:|-------:|\n")
 		for _, sd := range sec.Data {
 			if sd.Error != "" {
-				b.WriteString(fmt.Sprintf("| ⚠️ | %s | — | — | — | — | — | *%s* |\n", sd.Symbol, sd.Error))
+				b.WriteString(fmt.Sprintf("| | %s | — | — | — | — | — | *%s* |\n", sd.Symbol, sd.Error))
 			} else {
 				b.WriteString(fmt.Sprintf("| %s | %s | %.2f | %+.2f%% | %+.2f%% | %+.2f%% | %+.2f%% | %d |\n",
-					PerformanceEmoji(sd.Change1D), sd.Symbol, sd.LastClose,
+					textIndicator(sd.Change1D), sd.Symbol, sd.LastClose,
 					sd.Change1D, sd.Change5D, sd.Change1M, sd.ChangeYTD, sd.Volume))
 			}
 		}
@@ -137,17 +152,20 @@ func RenderMarkdown(report *DailyReport) string {
 
 	// Macro view.
 	if report.MacroView != "" {
-		b.WriteString("## 🌍 Macro Overview\n\n")
+		b.WriteString("## Macro Overview\n\n")
 		b.WriteString(report.MacroView + "\n\n")
 	}
 
-	b.WriteString("---\n\n*© 2026-2027 Elko AI Financial. All rights reserved.*\n")
+	b.WriteString("---\n\n*© 2026-2027 ChartGeometry Financial. All rights reserved.*\n")
 
 	return b.String()
 }
 
-// RenderHTML produces a standalone HTML report.
+// RenderHTML produces a standalone HTML report with embedded CSS.
 func RenderHTML(report *DailyReport) (string, error) {
+	// Inject CSS into report data.
+	report.CSS = template.CSS(defaultCSS)
+
 	var buf bytes.Buffer
 	if err := htmlTmpl.Execute(&buf, report); err != nil {
 		return "", fmt.Errorf("render HTML: %w", err)
